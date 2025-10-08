@@ -1,55 +1,68 @@
 import customtkinter as ctk
-from KeySelector import KeySelector
 from functools import partial
-import DataManager
-from ButtonFunction import *
 import Muse
 import EEGGraph
 import config
+import asyncio
+from BottomBar import BottomBar
+from TopBar import TopBar
+from ButtonFrame import ButtonFrame
+from HamsterControl import HamsterControl
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         
+        #화면 설정
         self.geometry("600x800")
         self.wm_minsize(600, 800)
-        self.title("브레인 키") 
-        self.grid_rowconfigure((0,3), weight=15)
-        self.grid_rowconfigure((1,2,4), weight=1)
-        self.grid_columnconfigure((0,1), weight=1)
+        self.title("뇌파 휠체어 조종 어플리케이션") 
+        
+        #그리드 (행/열) 설정
+        self.grid_rowconfigure((0,2,4,5), weight=1)
+        self.grid_rowconfigure((1,3), weight=20)
+
+        self.grid_columnconfigure(0, weight=1)
+
+        #종료 이벤트 바인딩
         self.protocol("WM_DELETE_WINDOW", self.onExit)
         
-        keySelector = KeySelector(self)
-        keySelector.grid(row=0, column=0, sticky="nsew", columnspan=2, padx=20, pady=10)
+        #Top Bar
+        self.topBar = TopBar(master=self)
+        self.topBar.grid(row=0, column=0, sticky="nsew")
 
-        learnButton = config.buttonGenerate(master=self, text="학습", row=1, index=0)
-        learnButton.configure(command=Muse.learn)
-        runButton = config.buttonGenerate(master=self, text="실행", row=1, index=1)
-        runButton.configure(command=partial(Muse.run, (learnButton, runButton)))
-        
+        #햄스터봇
+        self.controlPanel = HamsterControl(master=self)
+        self.controlPanel.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
+
+        #버튼프레임
+        self.buttonFrame = ButtonFrame(master=self)
+        self.buttonFrame.grid(row=2, column=0, sticky="nsew", padx=20)
+
+        #EEG그래프 표시
         graph = EEGGraph.EEGGraph(self)
-        graph.grid(row=3, column=0, padx=20, pady=10, sticky="nsew", columnspan=2)
+        graph.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
 
+        #Bottom바 표시
+        self.bottomBar = BottomBar(master=self, graph=graph, controlPanel=self.controlPanel)
+        self.bottomBar.grid(row=5, column=0, sticky="nsew")
+        self.bottomBar.startReceive()
+
+        #진행률 바 표시
         self.progress = ctk.CTkProgressBar(master=self, width=500)
 
-        recordButton = config.buttonGenerate(master=self, text="기록", row=4, index=0, columnspan=2, full=True)
-        recordButton.configure(command=partial(Muse.record, recordButton))
     def onExit(self):
         try:
-        # with open(code_code_path("data","keybind.pickle"), "wb") as file:
-        #     pickle.dump({}, file)
-        # stopObserver(self)
+            #EEG 그래프 종료
             config.stopped = True
-            #TODO: Thread 종료시킬 것
             self.quit()
-            # self.after_cancel(EEGGraph.afterID)
-            DataManager.keyBindWrite()
-            
         except:
             pass
 
+#CustomTkinter 기본 테마 설정
 ctk.set_default_color_theme("dark-blue")
-ctk.set_appearance_mode("Dark")
+ctk.set_appearance_mode("light")
 
+#앱 시작
 app = config.app = App()
 app.mainloop()

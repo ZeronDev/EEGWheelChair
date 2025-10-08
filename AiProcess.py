@@ -1,91 +1,105 @@
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras import layers, models # type: ignore
-from tensorflow.keras.constraints import max_norm # type: ignore
-from tensorflow.keras.callbacks import Callback # type: ignore
-import config
-from config import path
 import os
-import DataManager
+import numpy as np
+from pyriemann.estimation import Covariances
+from pyriemann.tangentspace import TangentSpace
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 from AiFilter import filterEEG
-
-tf.config.run_functions_eagerly(True)
-
-def build_eegnet(nb_classes, Chans, Samples, dropoutRate=0.3):
-    input1 = layers.Input(shape=(Chans, Samples, 1))
-
-    # Block 1
-    x = layers.Conv2D(8, (1, 64), padding='same', use_bias=False)(input1)
-    x = layers.BatchNormalization()(x)
-    x = layers.DepthwiseConv2D((Chans, 1), use_bias=False, depth_multiplier=2,depthwise_constraint=max_norm(1.))(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('elu')(x)
-    x = layers.AveragePooling2D((1, 4))(x)
-    x = layers.Dropout(dropoutRate)(x)
-
-    # Block 2
-    x = layers.SeparableConv2D(16, (1, 16), use_bias=False, padding='same')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('elu')(x)
-    x = layers.AveragePooling2D((1, 8))(x)
-    x = layers.Dropout(dropoutRate)(x)
-
-    # Classifier
-    x = layers.Flatten()(x)
-    x = layers.Dense(nb_classes, kernel_constraint=max_norm(0.25))(x)
-    out = layers.Activation('softmax')(x)
-
-    return models.Model(inputs=input1, outputs=out)
-
-model = None
-
-if os.path.exists(path("models", "EEGNet.h5")):
-    model = models.load_model(path("models", "EEGNet.h5"))
-else:
-    nb_classes = 4
-    model = build_eegnet(nb_classes, Chans=4, Samples=256)
-    model.compile(loss='sparse_categorical_crossentropy', optimizer=tf.keras.optimizers.Adam(), metrics=['accuracy'], run_eagerly=True)
+import joblib
+from copy import deepcopy
+from config import path
 
 Chans = 4
-Samples = 256
-stride = 128
-batch_size = 16
+Samples = 768
+stride = 384
 
-def train():
-    global model
-    
+baseline_mean = None
+clf = None
+ts = None
+scaler = None
+
+try:
+    model = joblib.load(path("models","pyriemann_model.pkl"))
+    clf, ts, scaler = model["classifier"], model["tangent_space"], model["scaler"]
+except Exception as e:
+    pass
+
+def augment_eeg(window, n_augment=3, noise_std=0.01, max_shift=10):
+    augmented = []
+    for _ in range(n_augment):
+        w = window.copy()
+        w += np.random.normal(0, noise_std, w.shape)
+        shift = np.random.randint(-max_shift, max_shift+1)
+        if shift > 0:
+            w = np.concatenate([np.zeros((w.shape[0], shift)), w[:, :-shift]], axis=1)
+        elif shift < 0:
+            w = np.concatenate([w[:, -shift:], np.zeros((w.shape[0], -shift))], axis=1)
+        augmented.append(w)
+    return augmented
+
+def preprocess_data(n_augment=3):
+    global baseline_mean
     X_list, y_list = [], []
 
-    for class_id, file_name in enumerate(list(map(lambda x: x+".csv", DataManager.eegData))):
-        data = np.loadtxt(path("data", file_name), delimiter=',')
+    baseline_data = np.loadtxt(os.path.join("data", "base.csv"), delimiter=',')
+    baseline_mean = np.mean(baseline_data, axis=0, keepdims=True)
 
-        filtered_data = np.zeros_like(data)
-        for ch in range(data.shape[1]):  # 각 채널 반복
-            filtered_data[:, ch] = filterEEG(data[:, ch])
+    eeg = ["left, right"]
+
+    for class_id, file_name in enumerate(list(map(lambda x: x+".csv", eeg))):
+        counter = 0
+        eegFile = f"{os.path.splitext(file_name)[0]}{'' if not counter else counter}.csv"
+        while os.path.exists(os.path.join("data", eegFile)) or counter == 0:
+            data = np.loadtxt(os.path.join("data", eegFile), delimiter=',')
+            filtered_data = np.zeros_like(data)
+            for ch in range(data.shape[1]):
+                filtered_data[:, ch] = filterEEG(data[:, ch])
             
-        for start in range(0, data.shape[0] - Samples + 1, stride):
-            window = filtered_data[start:start+Samples].T[..., np.newaxis]  # (Chans, Samples, 1)
-            X_list.append(window)
-            y_list.append(class_id)
-    X_train = np.stack(X_list)  # (총 trial 수, Chans, Samples, 1)
-    y_train = np.array(y_list)  # (총 trial 수,
-    model.fit(X_train, y_train, batch_size=16, epochs=50, shuffle=True, callbacks=[CTkProgressBarCallback()])
-    model.save(path("models", "EEGNet.h5"))
+            # sliding window
+            for start in range(0, data.shape[0]-Samples+1, stride):
+                window = filtered_data[start:start+Samples].T
+                window -= baseline_mean.T
+                window = (window - window.mean(axis=1, keepdims=True)) / (window.std(axis=1, keepdims=True) + 1e-6)
 
-class CTkProgressBarCallback(Callback):
-    def __init__(self):
-        super().__init__()
-        self.progressbar = config.app.progress
-        self.progressbar.grid(row=2, column=0, padx=20, pady=10, sticky="nsew", columnspan=2)
+                X_list.append(window)
+                y_list.append(class_id)
 
-    def on_epoch_begin(self, epoch, logs=None):
-        self.current_epoch = epoch
-        self.epochs = self.params['epochs']
-        self.steps_per_epoch = self.params['steps']
+                # 증강
+                augmented = augment_eeg(window, n_augment=n_augment)
+                X_list.extend(augmented)
+                y_list.extend([class_id]*len(augmented))
 
-    def on_batch_end(self, batch, logs=None):
-        total_batches = self.epochs * self.steps_per_epoch
-        current_batch = self.current_epoch * self.steps_per_epoch + batch + 1
-        progress_value = current_batch / total_batches
-        self.progressbar.set(progress_value)
-        self.progressbar.master.update()  # UI 갱신
+            counter += 1
+            eegFile = f"{os.path.splitext(file_name)[0]}{counter}.csv"
+
+    X = np.stack(X_list)
+    y = np.array(y_list)
+    return X, y
+
+def train_pyriemann(X, y):
+    global ts, scaler, clf
+    cov = Covariances().fit_transform(X)
+    ts = TangentSpace().fit(cov)
+    X_ts = ts.transform(cov)
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_ts)
+
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, stratify=y)
+
+    clf = LogisticRegression(max_iter=1000, multi_class='auto', solver='lbfgs')
+    clf.fit(X_train, y_train)
+
+    acc = clf.score(X_test, y_test)
+    print(f"Test Accuracy: {acc*100:.2f}%")
+
+    os.makedirs("models", exist_ok=True)
+    joblib.dump({'classifier': clf, 'tangent_space': ts, 'scaler': scaler}, "models/pyRiemann_model.pkl")
+
+def train():
+    X, y = preprocess_data(n_augment=4)
+    train_pyriemann(X, y)
+
+if __name__ == "__main__":
+    train()

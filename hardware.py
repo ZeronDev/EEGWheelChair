@@ -5,8 +5,6 @@ class Hardware:
         self.hamster = HamsterS()
     def forward(self):
         self.hamster.wheels(30)
-    def backward(self):
-        self.hamster.wheels(-30)
     def leftward(self):
         self.hamster.wheels(-30, 30)
     def rightward(self):
