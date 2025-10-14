@@ -22,7 +22,7 @@ def toggleAbility(): #disabled 토글
 
 def buttonGenerate(master, text, row, column, columnspan=1, full=False) -> ctk.CTkButton: #버튼 만들기 함수
     button = ctk.CTkButton(master=master, text=text, font=FONT)
-    button.grid(row=row, column=column, padx=15, pady=10, sticky="nsew" if full else "ew", columnspan=columnspan)
+    button.grid(row=row, column=column, padx=15, pady=5, sticky="nsew" if full else "ew", columnspan=columnspan)
     return button
 
 class TimerProgressBar: #기록 진행률 바

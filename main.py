@@ -1,9 +1,7 @@
 import customtkinter as ctk
-from functools import partial
 import Muse
 import EEGGraph
 import config
-import asyncio
 from BottomBar import BottomBar
 from TopBar import TopBar
 from ButtonFrame import ButtonFrame
@@ -15,12 +13,14 @@ class App(ctk.CTk):
         
         #화면 설정
         self.geometry("600x800")
+        self.iconbitmap(config.path("images", "LOGO.ico"))
         self.wm_minsize(600, 800)
         self.title("뇌파 휠체어 조종 어플리케이션") 
         
         #그리드 (행/열) 설정
-        self.grid_rowconfigure((0,2,4,5), weight=1)
-        self.grid_rowconfigure((1,3), weight=20)
+        self.grid_rowconfigure((0,1,2,4,5), weight=0)
+        # self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(3, weight=20)
 
         self.grid_columnconfigure(0, weight=1)
 
@@ -43,10 +43,9 @@ class App(ctk.CTk):
         graph = EEGGraph.EEGGraph(self)
         graph.grid(row=3, column=0, padx=20, pady=10, sticky="nsew")
 
-        #Bottom바 표시
+        # Bottom바 표시
         self.bottomBar = BottomBar(master=self, graph=graph, controlPanel=self.controlPanel)
         self.bottomBar.grid(row=5, column=0, sticky="nsew")
-        self.bottomBar.startReceive()
 
         #진행률 바 표시
         self.progress = ctk.CTkProgressBar(master=self, width=500)
