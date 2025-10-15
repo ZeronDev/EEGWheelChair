@@ -2,20 +2,20 @@ import os
 import numpy as np
 from pyriemann.estimation import Covariances
 from pyriemann.tangentspace import TangentSpace
-from pyriemann.classification import MDM
-from sklearn.linear_model import LogisticRegression
+# from pyriemann.classification import MDM, SVC
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from AiFilter import filterEEG
 import joblib
-from copy import deepcopy
+
 from config import path
-from sklearn.svm import SVC
+from sklearn.svm import SVC 
 
 Chans = 4
 Samples = 768
-stride = 384
+stride = int(Samples / 2)
 
 baseline_data = np.loadtxt(os.path.join("data", "base.csv"), delimiter=',')
 baseline_mean = np.mean(baseline_data, axis=0, keepdims=True)
@@ -82,19 +82,12 @@ def preprocess_data(n_augment=3):
 
 def train_pyriemann(X, y):
     global pipeline
-    # cov = Covariances(estimator='oas').fit_transform(X)
-    # ts = TangentSpace().fit(cov)
-    # X_ts = ts.transform(cov)
-
-    # scaler = StandardScaler()
-    # X_scaled = scaler.fit_transform(X_ts) #TODO
     pipeline = Pipeline([
         ('cov', Covariances(estimator='lwf')), # 공분산 행렬 추정
         ('ts', TangentSpace()),                # 리만 공간 -> 유클리드 접선 공간으로 변환
         ('scaler', StandardScaler()),          # 유클리드 특징 벡터 스케일링 (평균 0, 분산 1)
-        ('clf', SVC(kernel='linear', C=1.0))   # 선형 SVM 분류기
+        ('clf', CalibratedClassifierCV(SVC(kernel='rbf', C=1.0), method='sigmoid',cv=3))   # 선형 SVM 분류기
     ])
-
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, stratify=y)
     pipeline.fit(X_train, y_train)

@@ -2,12 +2,12 @@ from scipy.signal import butter, iirnotch, filtfilt, welch
 import numpy as np
 
 
-fs = 256  
+fs = 256
 lowcut = 8.0
-highcut = 30.0
+highcut = 40.0
 order = 4
 
-# Bandpass (0.5 ~ 40Hz)
+# Bandpass (8 ~ 40Hz)
 b_band, a_band = butter(order, [lowcut/(fs/2), highcut/(fs/2)], btype='band')
 
 # Notch (60Hz)
@@ -27,10 +27,8 @@ def check_qa(eegData):
 
     return contact_status
 
-
-
 def detect_blink(eeg_window):
-    blink_thresh = 200  # µV 단위, 눈 깜빡임 spike 임계치
+    blink_thresh = 190  # µV 단위, 눈 깜빡임 spike 임계치
     blink_chs = [0, 1]
     for ch in blink_chs:
         sig = filtfilt(b_band, a_band, eeg_window[ch])

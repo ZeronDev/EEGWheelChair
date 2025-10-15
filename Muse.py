@@ -67,12 +67,12 @@ def monitor_blink():
             if blink:
                 config.app.after(0,config.app.controlPanel.blink())
             
-        time.sleep(4)
+        time.sleep(1)
 
 
 def prediction():
     global isRunning
-    threshold = 0.9  # 확률 기준
+    threshold = 0.8  # 확률 기준
     lock = threading.Lock()
     
     while isRunning:
@@ -97,14 +97,14 @@ def prediction():
                 X_input = np.expand_dims(processed_window, axis=0)
 
                 # 6. Logistic Regression 예측
-                probs = ml.pipeline.decision_function(X_input)[0]
+                probs = ml.pipeline.predict_proba(X_input)
                 max_prob = np.max(probs)
-
+                pred_class = np.argmax(probs)
+                print(str(pred_class)+" "+str(np.round(probs, 2)))
                 if max_prob > threshold:
-                    pred_class = np.argmax(probs)
-                    print(str(pred_class)+" "+str(np.round(probs, 2)))
+                    # print(str(pred_class)+" "+str(np.round(probs, 2)))
                     config.app.after(0, partial(config.app.controlPanel.activate, pred_class))
-        time.sleep(1.5)
+        time.sleep(1)
     
 # def prediction():
 #     global isRunning

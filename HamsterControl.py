@@ -3,6 +3,7 @@ import config
 from config import path
 from PIL import Image
 from roboid import HamsterS, wait
+import asyncio
 
 class HamsterControl(ctk.CTkFrame):
     def __init__(self, master):
@@ -14,7 +15,6 @@ class HamsterControl(ctk.CTkFrame):
         self.color = "#d9d9d9"
         self.hamster = HamsterS()
         self.isMoving = False
-        self.isForward = False
 
         self.defaultLeft = ctk.CTkImage(light_image=Image.open(path("images", "light", "left.png")), dark_image=Image.open(path("images", "dark", "left.png")), size=(120,120))
         self.enabledLeft = ctk.CTkImage(light_image=Image.open(path("images", "left.png")), size=(120,120))
@@ -40,50 +40,52 @@ class HamsterControl(ctk.CTkFrame):
         match number:
             case 0:
                 self.left.configure(image=self.enabledLeft)
-                self.leftward()
+                asyncio.run(self.leftward())
             case 1:
                 self.right.configure(image=self.enabledRight)
-                self.rightward()
+                asyncio.run(self.rightward())
 
     def deactivate(self):
         self.left.configure(image=self.defaultLeft)
         self.right.configure(image=self.defaultRight)
-        self.configure(border_width=0)
+        
     def blink(self):
-        if self.isForward:
-            self.configure(border_width=0)
-            self.isForward = False
-        else:
-            self.forward()
-            self.configure(border_width=10)
-            self.isForward = True
-    def forward(self):
+        if not self.isMoving:
+            asyncio.run(self.forward())
+            
+    async def forward(self):
         if self.isMoving:
             return
         self.isMoving = True
         self.lightOn()
-        self.hamster.wheels(30)
+        self.hamster.wheels(50)
+        await asyncio.sleep(1)
+        self.stop()
+
     def stop(self):
         self.isMoving = False
         self.hamster.stop()
         self.lightOff()
         self.deactivate()
         
-    def leftward(self):
+    async def leftward(self):
         if self.isMoving:
             return
         self.isMoving = True
-        self.hamster.wheels(-30, 30)
+        self.hamster.wheels(35, -35)
         self.lightOn()
-        
-    def rightward(self):
-        if self.isMoving:
-            return
-        self.isMoving = True
-        self.hamster.wheels(30, -30)
-        self.lightOn()
-        wait(1000)
+        await asyncio.sleep(0.7)
         self.stop()
+
+    async def rightward(self):
+        if self.isMoving:
+            return
+        self.isMoving = True
+        self.hamster.wheels(-35, 35)
+        self.lightOn()
+        await asyncio.sleep(0.7)
+        self.stop()
+
     def lightOn(self):
         self.hamster.leds(1)
     def lightOff(self):
